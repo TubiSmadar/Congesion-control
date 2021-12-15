@@ -8,7 +8,6 @@
 int main(int argc, char **argv) {
   char buf[256];
   socklen_t len;
-  //jfgjfj
   int sock = socket(AF_INET, SOCK_STREAM, 0);
   if (sock == -1) {
     perror("socket");
