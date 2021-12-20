@@ -10,7 +10,7 @@
 #include <signal.h>
 
 
-#define SERVER_PORT 5555
+#define SERVER_PORT 12345
 #define BILLION  1000000000.0
 #define BUFF_SIZE 1024
 
@@ -20,13 +20,13 @@ int main() {
     char buffer[BUFF_SIZE];
 
     // create a socket lisener.
-    int sockfd = -1;
-    if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+    int server_socket = -1;
+    if((server_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
         printf("Couldn't create a socket listener : %d",errno);
     }
 
     int enable_reuse = 1;
-    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR,&enable_reuse, sizeof(int)) < 0) {
+    if(setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR,&enable_reuse, sizeof(int)) < 0) {
         printf("setsockopt() failed with error code: %d", errno);
     }
 
@@ -38,21 +38,21 @@ int main() {
     server_addr.sin_port = htons(SERVER_PORT); // short, network byte order
 
     // connect the server to a port which can read and write on.
-    if(bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+    if(bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
         printf("Bind failed with error code : %d" , errno);
         return -1;
     }
 
-    printf("the server is ready!\n\n");
+    // printf("the server is ready!\n\n");
 
 
-    if(listen(sockfd, 500) == -1) {
+    if(listen(server_socket, 10) == -1) {
         printf("listen() failed with error code : %d",errno);
         return -1;
     }
 
     //Accept and incoming connection
-    printf("Waiting for incoming connections\n");
+    printf("Waiting for connections\n");
 
     struct sockaddr_in client_addr;
     socklen_t client_addr_length = sizeof(client_addr);
@@ -67,13 +67,13 @@ int main() {
             // updates the length in each iteration.
             client_addr_length = sizeof(client_addr);
 
-            int client_socket = accept(sockfd, (struct sockaddr *)&client_addr, &client_addr_length);
+            int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_length);
             if(client_socket == -1) {
-            printf("listen failed with error code : %d",errno);
-            close(sockfd);
+              printf("listen failed with error code : %d",errno);
+              close(server_socket);
             return -1;
             } else {
-                printf("client number %d connection accepted\n",j);
+                printf("connection %d accepted\n",j);
             }
             struct timespec start, end;
             clock_gettime(CLOCK_REALTIME, &start);
@@ -85,9 +85,8 @@ int main() {
             clock_gettime(CLOCK_REALTIME, &end);
             // time_spent = end - start
             double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / BILLION;
-            printf("Time with round is %f seconds\n\n", time_spent);
+            printf("Took %f seconds to recive\n\n", time_spent);
             sum_for_average += time_spent;
-            sleep(1);
             j++;
         }
         char cc_type[20];
@@ -100,6 +99,6 @@ int main() {
         i++;
     }
 
-    close(sockfd);
+    close(server_socket);
     return 0;
 }

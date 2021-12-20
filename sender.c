@@ -10,7 +10,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
-#define SERVER_PORT          5555
+#define SERVER_PORT          12345
 #define SERVER_IP_ADDRESS    "127.0.0.1"
 #define FILENAME             "1mb.txt"
 #define FULL_SIZE 1048576
@@ -77,7 +77,7 @@ int main() {
                 exit(EXIT_FAILURE); // failing exit status.
             }
             else {
-                printf("client %d connected to server!\n",j);
+                printf("client %d connected to server successfully.\n",j);
             }
 
             file_pointer = fopen(FILENAME, "r");
@@ -97,7 +97,6 @@ int main() {
             }else {
                 printf("sent just %d out of %d\n",size,FULL_SIZE);
             }
-            sleep(1);
             close(client_socket);
             j++;
         }
