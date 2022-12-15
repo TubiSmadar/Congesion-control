@@ -1,104 +1,156 @@
+/* TCP Server */
+
+
 #include <stdio.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <time.h>
-#include <netinet/in.h>
 #include <stdlib.h>
-#include <string.h>
 #include <errno.h>
-#include <signal.h>
+#include <string.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <time.h>
 
 
-#define SERVER_PORT 12345
-#define BILLION  1000000000.0
-#define BUFF_SIZE 1024
+#define SERVER_PORT 1604
+#define BUFFER_SIZE 1024
+
+char buffer[BUFFER_SIZE] = {0};
+
+void sendMsg(int socket, char message[]);
+
+void receiveMsg(int socket);
+
+int receivalTimes[1000] = {-1};
+int receivalTimesIndex = 0;
 
 int main() {
-    // on linux to prevent crash on closing socket.
-    signal(SIGPIPE, SIG_IGN);
-    char buffer[BUFF_SIZE];
 
-    // create a socket lisener.
-    int server_socket = -1;
-    if((server_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        printf("Couldn't create a socket listener : %d",errno);
+    // Array to track clientSockets opened - will be called upon close().
+    int clientSockets[50] = {0};
+    int clientSocketsIndex = 0;
+
+    // Create socket for receiving files. This socket acts as a TCP server socket.
+    // @returns int representing receiverSocket fd, or -1 if socket failed to initialize.
+    int receiverSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if (receiverSocket == -1){
+        printf("Socket not created: %d", errno);
     }
 
-    int enable_reuse = 1;
-    if(setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR,&enable_reuse, sizeof(int)) < 0) {
-        printf("setsockopt() failed with error code: %d", errno);
+    // Reuse the address if the server socket on was closed
+    // and remains for 45 seconds in TIME-WAIT state till the final removal.
+    int enableReuse = 1;
+    if (setsockopt(receiverSocket, SOL_SOCKET, SO_REUSEADDR, &enableReuse, sizeof(int)) < 0) {
+        printf("setsockopt() failed with error code : %d", errno);
     }
 
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
+    // Initialize an internet socket-address object, named serverAddress.
+    // Socket will accept connections from any IP.
+    struct sockaddr_in serverAddress;
+    memset(&serverAddress, 0, sizeof(serverAddress));
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_addr.s_addr = INADDR_ANY;
+    serverAddress.sin_port = htons(SERVER_PORT);
 
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(SERVER_PORT); // short, network byte order
+    // Initialize an internet-address socket object, named clientAddress, for connections made with Receiver.
+    struct sockaddr_in clientAddress;
+    socklen_t clientAddressLen = sizeof(clientAddress);
 
-    // connect the server to a port which can read and write on.
-    if(bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
+    // Bind the socket to the Receiver's given internet address.
+    // @returns 0 if bind was successful, -1 if failed
+    int bindStatus = bind(receiverSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress));
+    if (bindStatus == -1){
         printf("Bind failed with error code : %d" , errno);
+        close(receiverSocket);
         return -1;
     }
+    printf("Bind was successful\n");
 
-    // printf("the server is ready!\n\n");
-
-
-    if(listen(server_socket, 10) == -1) {
-        printf("listen() failed with error code : %d",errno);
+    // Put socket in listening mode, waiting for connections.
+    // @return 0 if successful, -1 if failed.
+    int listenStatus = listen(receiverSocket, 20);
+    if (listenStatus == -1){
+        printf("Listen failed with error code : %d" , errno);
+        close(receiverSocket);
         return -1;
     }
+    printf("Receiver ready for connections\n");
 
-    //Accept and incoming connection
-    printf("Waiting for connections\n");
-
-    struct sockaddr_in client_addr;
-    socklen_t client_addr_length = sizeof(client_addr);
-    int i = 0;
-
-    while(i < 2){
-        int j = 0;
-        double sum_for_average = 0.0;
-        while(j < 5) {
-            memset(&client_addr, 0, sizeof(client_addr));
-
-            // updates the length in each iteration.
-            client_addr_length = sizeof(client_addr);
-
-            int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_length);
-            if(client_socket == -1) {
-              printf("listen failed with error code : %d",errno);
-              close(server_socket);
+    while(1) {
+        memset(&clientAddress, 0, sizeof(clientAddress));
+        clientAddressLen = sizeof(clientAddress);
+        int clientSocket = accept(receiverSocket, (struct sockaddr *)&clientAddress, &clientAddressLen);
+        if (clientSocket == -1) {
+            printf("listen failed with error code : %d" ,errno);
+            close(clientSocket);
+            //close(receiverSocket);
             return -1;
-            } else {
-                printf("connection %d accepted\n",j);
-            }
-            struct timespec start, end;
-            clock_gettime(CLOCK_REALTIME, &start);
+        }
+        receiveMsg(clientSocket);
+        clientSockets[clientSocketsIndex++] = clientSocket;
+        printf("A new client connection has been accepted\n");
 
-            int bytes = -1;
-            while(bytes != 0) {
-                bytes = recv(client_socket,buffer, BUFF_SIZE,0);
-            }
-            clock_gettime(CLOCK_REALTIME, &end);
-            // time_spent = end - start
-            double time_spent = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / BILLION;
-            printf("Took %f seconds to recive\n\n", time_spent);
-            sum_for_average += time_spent;
-            j++;
-        }
-        char cc_type[20];
-        if(i == 0) {
-            strcpy(cc_type,"cubic");
-        } else {
-            strcpy(cc_type,"reno");
-        }
-        printf("\nAverage time for CC %s is %f .\n\n",cc_type,sum_for_average/5);
-        i++;
     }
 
-    close(server_socket);
+
+    // Close all sockets - first client sockets, then receiver socket.
+    for(int i = 0; i < clientSocketsIndex; i++) {
+        close(clientSockets[i]);
+    }
+    close(receiverSocket);
+
     return 0;
 }
+
+
+void sendMsg(int socket, char message[]) {
+    int bytesSent;
+    int messageLen = strlen(message) + 1;
+    bytesSent = send(socket, message, messageLen, 0);
+    if (bytesSent == -1){
+        printf("Message failed to send, with error code : %d" ,errno);
+    } else if (bytesSent == 0) {
+        printf("TCP connection was closed by Receiver prior to send().\n");
+    } else if (messageLen > bytesSent) {
+        printf("Sent only %d bytes of the required %d.\n", bytesSent, messageLen);
+    } else {
+        printf("Message was successfully sent.\n");
+    }
+}
+
+void receiveMsg(int socket) {
+    //char message[] = {0};
+    long bytesReceived;
+    // Record the start time
+    struct timespec start;
+    clock_gettime(CLOCK_REALTIME, &start);
+
+    // Receive the TCP packet
+
+    bytesReceived = recv(socket, buffer, BUFFER_SIZE, 0);
+
+    // Record the end time
+    struct timespec end;
+    clock_gettime(CLOCK_REALTIME, &end);
+
+    // Calculate the elapsed time in nanoseconds
+    long elapsed_time = (end.tv_sec - start.tv_sec) * 1000000000;
+    elapsed_time += end.tv_nsec - start.tv_nsec;
+
+
+    if (bytesReceived == -1) {
+        printf("Failure to receive message, with error code : %d" ,errno);
+    } else if (bytesReceived == 0) {
+        printf("TCP connection was closed prior to recv().\n");
+    } else if (bytesReceived == 1) {
+        printf("Exit code received.\n");
+        exit(1);
+    } else {
+        printf("Message received from Sender.\nReceived %ld bytes\n", bytesReceived);
+        printf("Elapsed time: %ld nanoseconds\n", elapsed_time);
+        receivalTimes[receivalTimesIndex++] = elapsed_time;
+    }
+}
+
+
